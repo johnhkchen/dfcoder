@@ -23,13 +23,13 @@ mod protocol;
 mod transport;
 
 // Define resource exposures using the DSL
-mcp_resources! {
-    resource agents {
-        list: active_agents with status,
-        read: agent_state(id: AgentId),
-        write: send_command(id: AgentId, cmd: Command);
-    }
-}
+// mcp_resources! {
+//     resource agents {
+//         list: active_agents with status,
+//         read: agent_state(id: AgentId),
+//         write: send_command(id: AgentId, cmd: Command);
+//     }
+// }
 
 /// MCP configuration for DFCoder
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,7 +129,7 @@ impl Default for McpConfig {
 #[derive(Debug)]
 pub struct McpService {
     config: McpConfig,
-    server: McpServer,
+    // server: McpServer,
     client: Option<McpClient>,
     resource_manager: ResourceManager,
 }
@@ -137,12 +137,12 @@ pub struct McpService {
 impl McpService {
     /// Create a new MCP service
     pub fn new(config: McpConfig) -> Result<Self, McpError> {
-        let server = McpServer::new(config.clone())?;
+        // let server = McpServer::new(config.clone())?;
         let resource_manager = ResourceManager::new(config.resources.clone());
         
         Ok(Self {
             config,
-            server,
+            // server,
             client: None,
             resource_manager,
         })

@@ -1,7 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 use serde::{Deserialize, Serialize};
-use dfcoder_types::*;
 use crate::agent_mock::HelpRequest;
 
 /// Mock supervisor for testing dialogue scenarios

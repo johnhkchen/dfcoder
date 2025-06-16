@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 use std::collections::VecDeque;
 use serde::{Deserialize, Serialize};
-use dfcoder_types::*;
+use dfcoder_core::{AgentStatus, AgentMetrics};
 
 /// Mock agent for testing scenarios
 #[derive(Debug, Clone, Serialize, Deserialize)]

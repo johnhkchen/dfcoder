@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
-use dfcoder_types::*;
+use dfcoder_core::{AgentStatus, AgentMetrics, SystemEvent};
 
 /// Natural language scenario conditions
 pub struct ScenarioCondition {

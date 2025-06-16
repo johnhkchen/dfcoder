@@ -19,7 +19,7 @@ pub struct ResourceManager {
 pub struct AgentResource {
     pub id: String,
     pub name: String,
-    pub status: AgentStatus,
+    pub status: dfcoder_core::AgentStatus,
     pub current_task: Option<String>,
     pub last_activity: chrono::DateTime<chrono::Utc>,
     pub metrics: AgentMetrics,

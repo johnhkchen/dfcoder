@@ -19,7 +19,6 @@ chrono.workspace = true
 reqwest = { version = "0.11", features = ["json"] }
 uuid = { version = "1.0", features = ["v4"] }
 dfcoder-types = { path = "../dfcoder-types" }
-dfcoder-core = { path = "../dfcoder-core" }
 dfcoder-macros = { path = "../dfcoder-macros" }
 
 [dev-dependencies]

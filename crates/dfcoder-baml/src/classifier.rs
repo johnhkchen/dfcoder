@@ -1,324 +1,341 @@
-use crate::*;
-use std::collections::HashMap;
+//! BAML-based activity classification for agent output
 
-/// Activity classifier for semantic categorization
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use thiserror::Error;
+
+/// Classification result for agent activity
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityClass {
+    /// Primary activity category
+    pub primary: ActivityType,
+    /// Confidence level (0.0-1.0)
+    pub confidence: f32,
+    /// Whether the agent needs help based on low confidence
+    pub needs_help: bool,
+    /// Detected emotional state of the agent
+    pub emotional_state: EmotionalState,
+    /// Estimated time until completion
+    pub estimated_completion: Option<Duration>,
+}
+
+/// Types of activities an agent can be performing
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActivityType {
+    /// Setting up project structure
+    Scaffolding,
+    /// Writing new code/features
+    Implementing,
+    /// Analyzing and fixing errors
+    Debugging,
+    /// Writing or running tests
+    Testing,
+    /// Reading documentation or code
+    Researching,
+    /// Waiting for user input or external resources
+    Waiting,
+    /// Stuck and unable to proceed
+    Stuck,
+    /// Taking a break or idle
+    Idle,
+}
+
+/// Emotional/confidence state of the agent
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EmotionalState {
+    /// Making good progress, confident
+    Confident,
+    /// Working steadily, moderate confidence
+    Focused,
+    /// Encountering some difficulties
+    Cautious,
+    /// Struggling with the task
+    Frustrated,
+    /// Completely stuck, needs help
+    Desperate,
+}
+
+/// Errors that can occur during classification
+#[derive(Debug, Error)]
+pub enum ClassificationError {
+    #[error("BAML API error: {0}")]
+    ApiError(String),
+    #[error("JSON parsing error: {0}")]
+    JsonError(#[from] serde_json::Error),
+    #[error("Network error: {0}")]
+    NetworkError(String),
+    #[error("Authentication error")]
+    AuthError,
+    #[error("Rate limit exceeded")]
+    RateLimitError,
+}
+
+/// BAML client for activity classification
 #[derive(Debug, Clone)]
 pub struct ActivityClassifier {
-    client: BamlClient,
-    classification_cache: HashMap<String, ActivityClassification>,
+    api_key: String,
+    base_url: String,
+    model: String,
 }
 
 impl ActivityClassifier {
-    /// Create a new activity classifier
-    pub fn new(client: BamlClient) -> Self {
+    /// Create a new classifier with API configuration
+    pub fn new(api_key: String) -> Self {
         Self {
-            client,
-            classification_cache: HashMap::new(),
+            api_key,
+            base_url: "https://api.baml.ai/v1".to_string(),
+            model: "gpt-4".to_string(), // Default model
         }
     }
-    
-    /// Classify a single activity
-    pub async fn classify(&self, context: &ActivityContext) -> Result<ActivityClassification, BamlError> {
-        // Check cache first
-        let cache_key = self.generate_cache_key(context);
-        if let Some(cached) = self.classification_cache.get(&cache_key) {
-            return Ok(cached.clone());
+
+    /// Create classifier with custom configuration
+    pub fn with_config(api_key: String, base_url: String, model: String) -> Self {
+        Self {
+            api_key,
+            base_url,
+            model,
+        }
+    }
+
+    /// Classify agent activity from recent output
+    pub async fn classify_activity(&self, output: &str) -> Result<ActivityClass, ClassificationError> {
+        self.classify_with_context(output, None).await
+    }
+
+    /// Classify activity with additional context
+    pub async fn classify_with_context(
+        &self,
+        output: &str,
+        context: Option<&ActivityContext>,
+    ) -> Result<ActivityClass, ClassificationError> {
+        let prompt = self.build_classification_prompt(output, context);
+        
+        // For now, implement a simple rule-based classifier
+        // In a real implementation, this would call the BAML API
+        Ok(self.rule_based_classify(output))
+    }
+
+    /// Build the prompt for BAML classification
+    fn build_classification_prompt(&self, output: &str, context: Option<&ActivityContext>) -> String {
+        let mut prompt = String::new();
+        
+        prompt.push_str("Classify the following agent output into activity categories:\n\n");
+        prompt.push_str(&format!("Output: {}\n\n", output));
+        
+        if let Some(ctx) = context {
+            prompt.push_str(&format!("Recent history: {:?}\n", ctx.recent_activities));
+            prompt.push_str(&format!("Time working: {:?}\n", ctx.time_working));
+            prompt.push_str(&format!("Last known task: {:?}\n", ctx.current_task));
         }
         
-        let prompt = self.build_activity_classification_prompt(context);
-        let response = self.client.generate_response(&prompt).await?;
+        prompt.push_str("
+Categories:
+- Scaffolding: Setting up project structure, creating directories, config files
+- Implementing: Writing new code, adding features, building functionality  
+- Debugging: Analyzing errors, fixing bugs, troubleshooting issues
+- Testing: Writing tests, running test suites, validating functionality
+- Researching: Reading docs, studying code, learning about libraries
+- Waiting: Waiting for input, external resources, or user decisions
+- Stuck: Unable to proceed, needs guidance or help
+- Idle: Taking a break, no active work
+
+Emotional States:
+- Confident: Making good progress, clear direction
+- Focused: Working steadily, moderate confidence
+- Cautious: Encountering some difficulties but proceeding
+- Frustrated: Struggling significantly with the task
+- Desperate: Completely stuck, needs immediate help
+
+Please respond with JSON in this format:
+{
+  \"primary\": \"ActivityType\",
+  \"confidence\": 0.85,
+  \"emotional_state\": \"EmotionalState\",
+  \"estimated_completion\": \"5m\"
+}
+");
         
-        self.parse_activity_classification(&response)
+        prompt
     }
-    
-    /// Classify multiple activities in batch
-    pub async fn classify_batch(&self, contexts: &[ActivityContext]) -> Result<Vec<ActivityClassification>, BamlError> {
-        let mut results = Vec::new();
+
+    /// Simple rule-based classifier for demonstration
+    fn rule_based_classify(&self, output: &str) -> ActivityClass {
+        let output_lower = output.to_lowercase();
         
-        for context in contexts {
-            let classification = self.classify(context).await?;
-            results.push(classification);
-        }
-        
-        Ok(results)
-    }
-    
-    /// Classify agent behavior patterns
-    pub async fn classify_behavior_pattern(&self, agent_activities: &[ActivityContext]) -> Result<BehaviorPatternClassification, BamlError> {
-        let prompt = self.build_behavior_pattern_prompt(agent_activities);
-        let response = self.client.generate_response(&prompt).await?;
-        
-        self.parse_behavior_pattern_classification(&response)
-    }
-    
-    /// Detect when an agent needs supervision
-    pub async fn detect_supervision_need(&self, context: &ActivityContext) -> Result<SupervisionNeed, BamlError> {
-        let prompt = format!(
-            "Analyze this agent activity to determine if supervision is needed:\n\n\
-            Activity: {}\n\
-            Duration: {:?}\n\
-            Last Output: {}\n\
-            Error Messages: {:?}\n\
-            Progress Indicators: {:?}\n\n\
-            Return JSON with:\n\
-            - needs_supervision: boolean\n\
-            - urgency: low/medium/high/critical\n\
-            - reasoning: explanation\n\
-            - suggested_intervention: specific action to take\n\
-            - estimated_resolution_time: minutes",
-            context.description,
-            context.duration,
-            context.output_text,
-            context.error_messages,
-            context.progress_indicators
-        );
-        
-        let response = self.client.generate_response(&prompt).await?;
-        serde_json::from_str(&response)
-            .map_err(|e| BamlError::JsonError(e))
-    }
-    
-    /// Generate contextual dialogue options for supervision
-    pub async fn generate_dialogue_options(&self, context: &ActivityContext) -> Result<Vec<DialogueOption>, BamlError> {
-        let prompt = format!(
-            "Generate supervision dialogue options for this situation:\n\n\
-            Agent Activity: {}\n\
-            Current Issue: {}\n\
-            Context: {}\n\n\
-            Generate 3-5 dialogue options as JSON array with:\n\
-            - text: the dialogue option text\n\
-            - action_type: guidance/takeover/ignore/escalate\n\
-            - urgency: low/medium/high\n\
-            - estimated_time: minutes to complete",
-            context.description,
-            context.error_messages.join(", "),
-            context.output_text
-        );
-        
-        let response = self.client.generate_response(&prompt).await?;
-        serde_json::from_str(&response)
-            .map_err(|e| BamlError::JsonError(e))
-    }
-    
-    fn build_activity_classification_prompt(&self, context: &ActivityContext) -> String {
-        format!(
-            "Classify this software development activity:\n\n\
-            Activity: {}\n\
-            Duration: {:?}\n\
-            Output: {}\n\
-            File Types: {:?}\n\
-            Commands: {:?}\n\
-            Error Messages: {:?}\n\n\
-            Classify into one of these categories:\n\
-            - CodeGeneration (creating, refactoring, testing)\n\
-            - ProblemSolving (debugging, researching, analyzing)\n\
-            - Collaboration (asking_for_help, explaining, reviewing)\n\n\
-            Return JSON with:\n\
-            - primary_category: the main category\n\
-            - subcategory: specific subcategory\n\
-            - confidence: 0.0 to 1.0\n\
-            - indicators: keywords that influenced classification\n\
-            - complexity: low/medium/high\n\
-            - success_likelihood: 0.0 to 1.0",
-            context.description,
-            context.duration,
-            context.output_text.chars().take(500).collect::<String>(),
-            context.file_types,
-            context.commands_executed,
-            context.error_messages
-        )
-    }
-    
-    fn build_behavior_pattern_prompt(&self, activities: &[ActivityContext]) -> String {
-        let activity_summary = activities.iter()
-            .enumerate()
-            .map(|(i, ctx)| format!("{}. {} ({})", i + 1, ctx.description, ctx.duration.as_secs()))
-            .collect::<Vec<_>>()
-            .join("\n");
-        
-        format!(
-            "Analyze this sequence of agent activities to identify behavior patterns:\n\n\
-            Activities:\n{}\n\n\
-            Identify:\n\
-            - dominant_pattern: code_focused/problem_solver/collaborative/exploratory\n\
-            - efficiency: very_low/low/medium/high/very_high\n\
-            - focus_areas: list of main focus areas\n\
-            - collaboration_tendency: low/medium/high\n\
-            - problem_solving_approach: systematic/trial_error/research_heavy\n\
-            - areas_for_improvement: list of suggestions\n\n\
-            Return as JSON.",
-            activity_summary
-        )
-    }
-    
-    fn parse_activity_classification(&self, response: &str) -> Result<ActivityClassification, BamlError> {
-        // Extract JSON from response
-        let json_start = response.find('{');
-        let json_end = response.rfind('}');
-        
-        match (json_start, json_end) {
-            (Some(start), Some(end)) if start < end => {
-                let json_str = &response[start..=end];
-                let parsed: serde_json::Value = serde_json::from_str(json_str)?;
-                
-                let primary_category = self.parse_activity_category(&parsed["primary_category"])?;
-                let confidence = parsed["confidence"].as_f64().unwrap_or(0.0) as f32;
-                let indicators = parsed["indicators"].as_array()
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                    .unwrap_or_default();
-                
-                let complexity = match parsed["complexity"].as_str().unwrap_or("medium") {
-                    "low" => ActivityComplexity::Low,
-                    "high" => ActivityComplexity::High,
-                    _ => ActivityComplexity::Medium,
-                };
-                
-                Ok(ActivityClassification {
-                    primary_category,
-                    confidence,
-                    indicators,
-                    complexity,
-                    success_likelihood: parsed["success_likelihood"].as_f64().unwrap_or(0.5) as f32,
-                    timestamp: chrono::Utc::now(),
-                })
+        // Detect activity type based on keywords
+        let primary = if output_lower.contains("error") || output_lower.contains("failed") || output_lower.contains("exception") {
+            if output_lower.contains("fixing") || output_lower.contains("debug") {
+                ActivityType::Debugging
+            } else {
+                ActivityType::Stuck
             }
-            _ => Err(BamlError::ClassificationError("Invalid JSON response".to_string()))
-        }
-    }
-    
-    fn parse_activity_category(&self, value: &serde_json::Value) -> Result<Activities, BamlError> {
-        match value.as_str() {
-            Some("CodeGeneration") => Ok(Activities::CodeGeneration(CodeGeneration::Creating)),
-            Some("ProblemSolving") => Ok(Activities::ProblemSolving(ProblemSolving::Debugging)),
-            Some("Collaboration") => Ok(Activities::Collaboration(Collaboration::AskingForHelp)),
-            _ => Err(BamlError::ClassificationError("Unknown activity category".to_string()))
-        }
-    }
-    
-    fn parse_behavior_pattern_classification(&self, response: &str) -> Result<BehaviorPatternClassification, BamlError> {
-        let json_start = response.find('{');
-        let json_end = response.rfind('}');
-        
-        match (json_start, json_end) {
-            (Some(start), Some(end)) if start < end => {
-                let json_str = &response[start..=end];
-                serde_json::from_str(json_str)
-                    .map_err(|e| BamlError::JsonError(e))
+        } else if output_lower.contains("test") || output_lower.contains("spec") || output_lower.contains("assert") {
+            ActivityType::Testing
+        } else if output_lower.contains("mkdir") || output_lower.contains("cargo init") || output_lower.contains("setup") {
+            ActivityType::Scaffolding
+        } else if output_lower.contains("implementing") || output_lower.contains("writing") || output_lower.contains("adding") {
+            ActivityType::Implementing
+        } else if output_lower.contains("reading") || output_lower.contains("docs") || output_lower.contains("researching") {
+            ActivityType::Researching
+        } else if output_lower.contains("waiting") || output_lower.contains("pending") {
+            ActivityType::Waiting
+        } else if output_lower.contains("stuck") || output_lower.contains("confused") || output_lower.contains("help") {
+            ActivityType::Stuck
+        } else {
+            ActivityType::Implementing // Default
+        };
+
+        // Determine confidence based on emotional indicators
+        let (confidence, emotional_state) = if output_lower.contains("stuck") && (output_lower.contains("confused") || output_lower.contains("help")) {
+            (0.1, EmotionalState::Desperate)
+        } else if output_lower.contains("error") || output_lower.contains("failed") {
+            if output_lower.contains("stuck") {
+                (0.2, EmotionalState::Frustrated)
+            } else {
+                (0.4, EmotionalState::Frustrated)
             }
-            _ => Err(BamlError::ClassificationError("Invalid JSON response".to_string()))
+        } else if output_lower.contains("trying") || output_lower.contains("attempting") {
+            (0.6, EmotionalState::Cautious)
+        } else if output_lower.contains("completed") || output_lower.contains("success") || output_lower.contains("done") {
+            (0.9, EmotionalState::Confident)
+        } else {
+            (0.7, EmotionalState::Focused)
+        };
+
+        // Determine if help is needed - only for really stuck situations
+        let needs_help = matches!(primary, ActivityType::Stuck) || 
+                        (confidence < 0.3 && matches!(emotional_state, EmotionalState::Desperate));
+
+        ActivityClass {
+            primary,
+            confidence,
+            needs_help,
+            emotional_state,
+            estimated_completion: Some(Duration::from_secs(300)), // Default 5 minutes
         }
-    }
-    
-    fn generate_cache_key(&self, context: &ActivityContext) -> String {
-        // Simple cache key based on activity description and duration
-        format!("{}_{}", context.description, context.duration.as_secs())
     }
 }
 
-/// Context for activity classification
+/// Context information for activity classification
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivityContext {
-    pub description: String,
-    pub duration: Duration,
-    pub output_text: String,
-    pub file_types: Vec<String>,
-    pub commands_executed: Vec<String>,
-    pub error_messages: Vec<String>,
-    pub progress_indicators: Vec<String>,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-/// Result of activity classification
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActivityClassification {
-    pub primary_category: Activities,
-    pub confidence: f32,
-    pub indicators: Vec<String>,
-    pub complexity: ActivityComplexity,
-    pub success_likelihood: f32,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-/// Activity complexity levels
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ActivityComplexity {
-    Low,
-    Medium,
-    High,
-}
-
-/// Behavior pattern classification
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BehaviorPatternClassification {
-    pub dominant_pattern: String,
-    pub efficiency: String,
-    pub focus_areas: Vec<String>,
-    pub collaboration_tendency: String,
-    pub problem_solving_approach: String,
-    pub areas_for_improvement: Vec<String>,
-}
-
-/// Supervision need assessment
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SupervisionNeed {
-    pub needs_supervision: bool,
-    pub urgency: String,
-    pub reasoning: String,
-    pub suggested_intervention: String,
-    pub estimated_resolution_time: u32,
-}
-
-/// Dialogue option for supervision
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DialogueOption {
-    pub text: String,
-    pub action_type: String,
-    pub urgency: String,
-    pub estimated_time: u32,
+    /// Recent activity history
+    pub recent_activities: Vec<ActivityType>,
+    /// How long the agent has been working on current task
+    #[serde(skip)]
+    pub time_working: Duration,
+    /// Current task description
+    pub current_task: Option<String>,
+    /// Number of recent errors
+    pub error_count: u32,
+    /// Agent's role
+    pub agent_role: Option<String>,
 }
 
 impl ActivityContext {
-    /// Create a new activity context
-    pub fn new(description: impl Into<String>) -> Self {
+    /// Create new context
+    pub fn new() -> Self {
         Self {
-            description: description.into(),
-            duration: Duration::from_secs(0),
-            output_text: String::new(),
-            file_types: Vec::new(),
-            commands_executed: Vec::new(),
-            error_messages: Vec::new(),
-            progress_indicators: Vec::new(),
-            timestamp: chrono::Utc::now(),
+            recent_activities: Vec::new(),
+            time_working: Duration::from_secs(0),
+            current_task: None,
+            error_count: 0,
+            agent_role: None,
         }
     }
-    
-    /// Add output text to the context
-    pub fn with_output(mut self, output: impl Into<String>) -> Self {
-        self.output_text = output.into();
-        self
+
+    /// Add an activity to the history
+    pub fn add_activity(&mut self, activity: ActivityType) {
+        self.recent_activities.push(activity);
+        
+        // Keep only last 10 activities
+        if self.recent_activities.len() > 10 {
+            self.recent_activities.remove(0);
+        }
     }
-    
-    /// Add file types to the context
-    pub fn with_file_types(mut self, file_types: Vec<String>) -> Self {
-        self.file_types = file_types;
-        self
+
+    /// Update working time
+    pub fn update_working_time(&mut self, time: Duration) {
+        self.time_working = time;
     }
-    
-    /// Add executed commands to the context
-    pub fn with_commands(mut self, commands: Vec<String>) -> Self {
-        self.commands_executed = commands;
-        self
+
+    /// Increment error count
+    pub fn increment_errors(&mut self) {
+        self.error_count += 1;
     }
-    
-    /// Add error messages to the context
-    pub fn with_errors(mut self, errors: Vec<String>) -> Self {
-        self.error_messages = errors;
-        self
+}
+
+impl Default for ActivityContext {
+    fn default() -> Self {
+        Self::new()
     }
-    
-    /// Set the duration of the activity
-    pub fn with_duration(mut self, duration: Duration) -> Self {
-        self.duration = duration;
-        self
+}
+
+/// Simple function to classify agent output - main API
+pub async fn classify_activity(output: &str) -> ActivityClass {
+    let classifier = ActivityClassifier::new("demo-key".to_string());
+    classifier.rule_based_classify(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rule_based_classification() {
+        let classifier = ActivityClassifier::new("test-key".to_string());
+
+        // Test error detection
+        let result = classifier.rule_based_classify("Error: compilation failed");
+        assert_eq!(result.primary, ActivityType::Stuck);
+        assert!(result.needs_help);
+
+        // Test debugging detection
+        let result = classifier.rule_based_classify("Debugging the error, fixing the issue");
+        assert_eq!(result.primary, ActivityType::Debugging);
+
+        // Test test detection
+        let result = classifier.rule_based_classify("Running tests to verify functionality");
+        assert_eq!(result.primary, ActivityType::Testing);
+
+        // Test scaffolding detection
+        let result = classifier.rule_based_classify("Setting up project structure with cargo init");
+        assert_eq!(result.primary, ActivityType::Scaffolding);
+
+        // Test confidence levels
+        let result = classifier.rule_based_classify("Successfully completed the implementation");
+        assert_eq!(result.emotional_state, EmotionalState::Confident);
+        assert!(!result.needs_help);
+    }
+
+    #[test]
+    fn test_activity_context() {
+        let mut context = ActivityContext::new();
+        
+        context.add_activity(ActivityType::Implementing);
+        context.add_activity(ActivityType::Testing);
+        
+        assert_eq!(context.recent_activities.len(), 2);
+        assert_eq!(context.recent_activities[0], ActivityType::Implementing);
+        assert_eq!(context.recent_activities[1], ActivityType::Testing);
+    }
+
+    #[test]
+    fn test_confidence_thresholds() {
+        let classifier = ActivityClassifier::new("test-key".to_string());
+
+        let high_confidence = classifier.rule_based_classify("Everything working perfectly");
+        assert!(high_confidence.confidence > 0.8);
+
+        let low_confidence = classifier.rule_based_classify("I'm stuck and need help");
+        assert!(low_confidence.confidence < 0.5);
+        assert!(low_confidence.needs_help);
+    }
+
+    #[tokio::test]
+    async fn test_classify_activity_function() {
+        let result = classify_activity("Error: cannot find module").await;
+        assert_eq!(result.primary, ActivityType::Stuck);
+        assert!(result.needs_help);
     }
 }

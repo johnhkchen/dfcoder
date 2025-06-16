@@ -8,8 +8,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use futures::Future;
 use tokio::sync::{Mutex, RwLock};
-use dfcoder_types::*;
-use dfcoder_core::*;
+use dfcoder_core::{Agent, AgentRole};
 
 pub use scenario::*;
 pub use agent_mock::*;
@@ -182,7 +181,7 @@ impl TestScenario {
     pub async fn with_stuck_agent(name: impl Into<String>) -> Self {
         let scenario = Self::new(name);
         let agent = MockAgent::new("stuck_agent")
-            .with_status(AgentStatus::Stuck)
+            .with_status(dfcoder_core::AgentStatus::Stuck)
             .with_current_task("impossible task");
         scenario.add_agent(agent).await;
         scenario
