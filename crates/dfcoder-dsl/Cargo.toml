@@ -1,0 +1,25 @@
+[package]
+name = "dfcoder-dsl"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Natural language DSLs for DFCoder agent behaviors"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+dfcoder-types = { path = "../dfcoder-types" }
+dfcoder-core = { path = "../dfcoder-core" }
+dfcoder-macros = { path = "../dfcoder-macros" }
+
+[dev-dependencies]
+dfcoder-test-utils = { path = "../dfcoder-test-utils" }
+tokio-test = "0.4"

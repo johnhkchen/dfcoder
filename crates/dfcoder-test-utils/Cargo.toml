@@ -1,0 +1,24 @@
+[package]
+name = "dfcoder-test-utils"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Test utilities and DSL for DFCoder scenarios"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+dfcoder-types = { path = "../dfcoder-types" }
+dfcoder-core = { path = "../dfcoder-core" }
+
+[dev-dependencies]
+tokio-test = "0.4"

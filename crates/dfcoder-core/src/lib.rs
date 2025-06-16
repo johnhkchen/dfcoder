@@ -1,14 +1,16 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+//! Core functionality for DFCoder
+
+use dfcoder_types::*;
+
+/// Placeholder trait for Event types
+pub trait Event: Send + Sync {}
+
+/// Placeholder error type
+#[derive(Debug, thiserror::Error)]
+pub enum EventError {
+    #[error("Event processing failed: {0}")]
+    ProcessingFailed(String),
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+/// Re-export common types
+pub use dfcoder_types::*;

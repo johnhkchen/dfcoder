@@ -5,6 +5,11 @@ members = [
     "crates/dfcoder-tui",
     "crates/dfcoder-daemon",
     "crates/dfcoder-zellij-plugin",
+    "crates/dfcoder-macros",
+    "crates/dfcoder-test-utils",
+    "crates/dfcoder-dsl",
+    "crates/dfcoder-baml",
+    "crates/dfcoder-mcp",
 ]
 resolver = "2"
 
@@ -51,6 +56,11 @@ serde-wasm-bindgen = "0.6"
 # Internal workspace dependencies
 dfcoder-core = { path = "crates/dfcoder-core" }
 dfcoder-types = { path = "crates/dfcoder-types" }
+dfcoder-macros = { path = "crates/dfcoder-macros" }
+dfcoder-test-utils = { path = "crates/dfcoder-test-utils" }
+dfcoder-dsl = { path = "crates/dfcoder-dsl" }
+dfcoder-baml = { path = "crates/dfcoder-baml" }
+dfcoder-mcp = { path = "crates/dfcoder-mcp" }
 
 [package]
 name = "dfcoder"
