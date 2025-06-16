@@ -19,6 +19,7 @@ async-trait.workspace = true
 chrono.workspace = true
 dfcoder-types = { path = "../dfcoder-types" }
 dfcoder-core = { path = "../dfcoder-core" }
+dfcoder-baml = { path = "../dfcoder-baml" }
 
 [dev-dependencies]
 tokio-test = "0.4"
