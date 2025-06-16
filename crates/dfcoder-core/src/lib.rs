@@ -2,10 +2,12 @@
 
 pub mod agents;
 pub mod coordination;
+pub mod retry;
 pub mod supervision;
 
 pub use agents::*;
 pub use coordination::*;
+pub use retry::*;
 pub use supervision::*;
 
 /// Placeholder trait for Event types

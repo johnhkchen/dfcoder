@@ -449,9 +449,9 @@ pub fn generate_dialogue_options(
 pub fn determine_urgency(activity: &ActivityClass) -> SupervisionUrgency {
     match (activity.emotional_state.clone(), activity.confidence, activity.primary.clone()) {
         (EmotionalState::Desperate, _, _) => SupervisionUrgency::Critical,
-        (EmotionalState::Frustrated, _, ActivityType::Stuck) => SupervisionUrgency::High,
+        (EmotionalState::Frustrated, _, _) => SupervisionUrgency::High,
         (_, c, ActivityType::Stuck) if c < 0.4 => SupervisionUrgency::High,
-        (_, c, _) if c < 0.3 => SupervisionUrgency::Medium,
+        (_, c, _) if c <= 0.3 => SupervisionUrgency::Medium,
         _ => SupervisionUrgency::Low,
     }
 }

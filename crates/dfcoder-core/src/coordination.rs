@@ -1,9 +1,10 @@
 //! Workshop capacity management and task coordination
 
 use crate::agents::*;
+use crate::retry::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 /// Manages workshop capacity and task assignment
@@ -21,6 +22,39 @@ pub struct WorkshopManager {
     completed_tasks: Vec<TaskId>,
     /// Workshop metrics
     metrics: WorkshopMetrics,
+    /// Retry executor for failed tasks
+    retry_executor: RetryExecutor,
+    /// Agent expertise tracking
+    agent_expertise: HashMap<AgentId, AgentExpertise>,
+}
+
+/// Tracks agent expertise and performance patterns
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentExpertise {
+    /// Success rate for different task types
+    pub task_success_rates: HashMap<String, f32>,
+    /// Average completion time by task complexity
+    pub completion_times: HashMap<TaskComplexity, Duration>,
+    /// Total tasks completed
+    pub total_tasks: u32,
+    /// Specialization score (0.0 = generalist, 1.0 = highly specialized)
+    pub specialization_score: f32,
+    /// Last performance update
+    #[serde(skip, default = "instant_now")]
+    pub last_updated: Instant,
+}
+
+fn instant_now() -> Instant {
+    Instant::now()
+}
+
+/// Task complexity levels for better assignment
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum TaskComplexity {
+    Simple,     // < 1 hour estimated
+    Medium,     // 1-4 hours estimated  
+    Complex,    // 4-8 hours estimated
+    Expert,     // > 8 hours estimated
 }
 
 /// Workshop performance metrics
@@ -29,11 +63,18 @@ pub struct WorkshopMetrics {
     pub total_tasks_processed: u32,
     pub tasks_completed: u32,
     pub tasks_failed: u32,
+    pub tasks_retried: u32,
     #[serde(skip)]
     pub average_task_duration: Duration,
     pub agent_utilization: HashMap<AgentRole, f32>,
     pub queue_length: usize,
     pub bottleneck_role: Option<AgentRole>,
+    /// System throughput (tasks per hour)
+    pub throughput: f32,
+    /// Success rate percentage
+    pub success_rate: f32,
+    /// Cost efficiency metrics
+    pub cost_per_task: f32,
 }
 
 /// Errors that can occur in workshop management
@@ -69,6 +110,8 @@ impl WorkshopManager {
             task_queue: VecDeque::new(),
             completed_tasks: Vec::new(),
             metrics: WorkshopMetrics::default(),
+            retry_executor: RetryExecutor::new(RetryPolicy::default()),
+            agent_expertise: HashMap::new(),
         }
     }
 
@@ -117,6 +160,47 @@ impl WorkshopManager {
         }
         
         Ok(None)
+    }
+
+    /// Assign tasks by priority, considering agent expertise and load balancing
+    pub fn assign_by_priority(&mut self) -> Result<Option<(AgentId, Task)>, WorkshopError> {
+        // Sort tasks by priority and complexity
+        self.prioritize_task_queue();
+        
+        // Find the best task-agent match
+        for (task_index, task) in self.task_queue.iter().enumerate() {
+            if !task.dependencies_satisfied(&self.completed_tasks) {
+                continue;
+            }
+            
+            if let Some(_best_agent) = self.find_best_agent_for_task(task) {
+                let task = self.task_queue.remove(task_index).unwrap();
+                let task_copy = task.clone();
+                let agent_id = self.assign_task(task)?;
+                return Ok(Some((agent_id, task_copy)));
+            }
+        }
+        
+        Ok(None)
+    }
+
+    /// Execute a task with retry logic
+    pub async fn execute_task_with_retry(
+        &mut self,
+        agent_id: &AgentId,
+        task: &Task,
+    ) -> Result<TaskResult, WorkshopError> {
+        let agent = self.agents.get_mut(agent_id)
+            .ok_or_else(|| WorkshopError::AgentNotFound(agent_id.clone()))?;
+        
+        let result = self.retry_executor.execute_task(agent, task).await
+            .map_err(|e| WorkshopError::TaskNotFound(format!("Retry failed: {:?}", e)))?;
+        
+        // Update metrics
+        self.metrics.tasks_retried += result.attempt_number - 1;
+        self.update_agent_expertise(agent_id, task, &result);
+        
+        Ok(result)
     }
 
     /// Find an assignable task considering dependencies and available agents
@@ -310,6 +394,189 @@ impl WorkshopManager {
     pub fn set_capacity(&mut self, role: AgentRole, capacity: usize) {
         self.max_concurrent.insert(role, capacity);
     }
+
+    /// Prioritize task queue by priority and complexity
+    fn prioritize_task_queue(&mut self) {
+        // Collect tasks and sort them
+        let mut tasks: Vec<_> = self.task_queue.drain(..).collect();
+        tasks.sort_by(|a, b| {
+            // First sort by priority
+            match b.context.priority.cmp(&a.context.priority) {
+                std::cmp::Ordering::Equal => {
+                    // Then by complexity (simpler tasks first for quick wins)
+                    let a_complexity = self.estimate_task_complexity(a);
+                    let b_complexity = self.estimate_task_complexity(b);
+                    a_complexity.cmp(&b_complexity)
+                }
+                other => other,
+            }
+        });
+        
+        // Put sorted tasks back
+        for task in tasks {
+            self.task_queue.push_back(task);
+        }
+    }
+
+    /// Estimate task complexity based on description and requirements
+    fn estimate_task_complexity(&self, task: &Task) -> TaskComplexity {
+        let description = task.description.to_lowercase();
+        let title = task.title.to_lowercase();
+        
+        // Simple heuristics for complexity estimation
+        if description.contains("fix") || description.contains("bug") || title.len() < 20 {
+            TaskComplexity::Simple
+        } else if description.contains("implement") || description.contains("feature") {
+            if description.contains("complex") || description.contains("integration") {
+                TaskComplexity::Complex
+            } else {
+                TaskComplexity::Medium
+            }
+        } else if description.contains("architecture") || description.contains("design") {
+            TaskComplexity::Expert
+        } else {
+            TaskComplexity::Medium
+        }
+    }
+
+    /// Find the best agent for a given task based on expertise and availability
+    fn find_best_agent_for_task(&self, task: &Task) -> Option<AgentId> {
+        let available_agents: Vec<_> = self.agents.values()
+            .filter(|agent| {
+                agent.role == task.required_role 
+                && agent.status == AgentStatus::Idle
+                && self.can_assign(agent.role.clone())
+            })
+            .collect();
+
+        if available_agents.is_empty() {
+            return None;
+        }
+
+        // Score agents based on expertise
+        let mut best_agent = None;
+        let mut best_score = -1.0f32;
+
+        for agent in available_agents {
+            let score = self.calculate_agent_score(agent, task);
+            if score > best_score {
+                best_score = score;
+                best_agent = Some(agent.id.clone());
+            }
+        }
+
+        best_agent
+    }
+
+    /// Calculate agent suitability score for a task
+    fn calculate_agent_score(&self, agent: &Agent, task: &Task) -> f32 {
+        let expertise = self.agent_expertise.get(&agent.id);
+        
+        let mut score = 0.5; // Base score
+        
+        if let Some(exp) = expertise {
+            // Factor in success rate for similar tasks
+            let task_type = self.categorize_task(task);
+            if let Some(success_rate) = exp.task_success_rates.get(&task_type) {
+                score += success_rate * 0.3;
+            }
+            
+            // Factor in completion time efficiency
+            let complexity = self.estimate_task_complexity(task);
+            if let Some(avg_time) = exp.completion_times.get(&complexity) {
+                // Lower time = higher score
+                let efficiency = 1.0 / (avg_time.as_secs_f32() / 3600.0 + 1.0);
+                score += efficiency * 0.2;
+            }
+            
+            // Factor in total experience
+            score += (exp.total_tasks as f32 / 100.0).min(0.2);
+        }
+        
+        // Factor in current workload (prefer less busy agents)
+        score -= agent.metrics.tasks_completed as f32 * 0.01;
+        
+        score
+    }
+
+    /// Categorize task for expertise tracking
+    fn categorize_task(&self, task: &Task) -> String {
+        let description = task.description.to_lowercase();
+        
+        if description.contains("test") || description.contains("spec") {
+            "testing".to_string()
+        } else if description.contains("debug") || description.contains("fix") {
+            "debugging".to_string()
+        } else if description.contains("setup") || description.contains("scaffold") {
+            "scaffolding".to_string()
+        } else if description.contains("implement") || description.contains("feature") {
+            "implementation".to_string()
+        } else {
+            "general".to_string()
+        }
+    }
+
+    /// Update agent expertise based on task completion
+    fn update_agent_expertise(&mut self, agent_id: &AgentId, task: &Task, result: &TaskResult) {
+        let task_type = self.categorize_task(task);
+        let complexity = self.estimate_task_complexity(task);
+        
+        // Get or create expertise entry
+        let expertise = self.agent_expertise.entry(agent_id.clone())
+            .or_insert_with(AgentExpertise::default);
+        
+        // Update success rate
+        let current_rate = expertise.task_success_rates.get(&task_type).copied().unwrap_or(0.5);
+        let new_rate = if result.success {
+            (current_rate * 0.9) + (1.0 * 0.1) // Weighted average favoring recent performance
+        } else {
+            (current_rate * 0.9) + (0.0 * 0.1)
+        };
+        expertise.task_success_rates.insert(task_type, new_rate);
+        
+        // Update completion time
+        if result.success {
+            let current_time = expertise.completion_times.get(&complexity)
+                .copied().unwrap_or(Duration::from_secs(3600));
+            let new_time = Duration::from_secs(
+                ((current_time.as_secs() as f32 * 0.8) + (result.duration.as_secs() as f32 * 0.2)) as u64
+            );
+            expertise.completion_times.insert(complexity, new_time);
+        }
+        
+        // Update total tasks and last updated
+        expertise.total_tasks += 1;
+        expertise.last_updated = Instant::now();
+        
+        // Calculate specialization score separately to avoid borrow conflicts
+        let rates: Vec<f32> = expertise.task_success_rates.values().copied().collect();
+        let specialization_score = if rates.is_empty() {
+            0.0
+        } else {
+            let avg_rate = rates.iter().sum::<f32>() / rates.len() as f32;
+            let variance = rates.iter()
+                .map(|rate| (rate - avg_rate).powi(2))
+                .sum::<f32>() / rates.len() as f32;
+            variance.sqrt().min(1.0)
+        };
+        expertise.specialization_score = specialization_score;
+    }
+
+    /// Calculate agent specialization score
+    fn calculate_specialization_score(&self, expertise: &AgentExpertise) -> f32 {
+        if expertise.task_success_rates.is_empty() {
+            return 0.0;
+        }
+        
+        let rates: Vec<f32> = expertise.task_success_rates.values().copied().collect();
+        let avg_rate = rates.iter().sum::<f32>() / rates.len() as f32;
+        let variance = rates.iter()
+            .map(|rate| (rate - avg_rate).powi(2))
+            .sum::<f32>() / rates.len() as f32;
+        
+        // Higher variance = more specialized
+        variance.sqrt().min(1.0)
+    }
 }
 
 /// Current status of the workshop
@@ -329,10 +596,26 @@ impl Default for WorkshopMetrics {
             total_tasks_processed: 0,
             tasks_completed: 0,
             tasks_failed: 0,
+            tasks_retried: 0,
             average_task_duration: Duration::from_secs(0),
             agent_utilization: HashMap::new(),
             queue_length: 0,
             bottleneck_role: None,
+            throughput: 0.0,
+            success_rate: 0.0,
+            cost_per_task: 0.0,
+        }
+    }
+}
+
+impl Default for AgentExpertise {
+    fn default() -> Self {
+        Self {
+            task_success_rates: HashMap::new(),
+            completion_times: HashMap::new(),
+            total_tasks: 0,
+            specialization_score: 0.0,
+            last_updated: Instant::now(),
         }
     }
 }
@@ -413,7 +696,7 @@ mod tests {
         workshop.register_agent(agent2).unwrap();
 
         let task1 = Task::new("Task 1".to_string(), "Desc".to_string(), AgentRole::Scaffolder, TaskPriority::Normal);
-        let task2 = Task::new("Task 2".to_string(), "Desc".to_string(), AgentRole::Scaffolder, TaskPriority::Normal);
+        let _task2 = Task::new("Task 2".to_string(), "Desc".to_string(), AgentRole::Scaffolder, TaskPriority::Normal);
 
         // First assignment should work
         assert!(workshop.assign_task(task1).is_ok());

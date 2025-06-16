@@ -2,7 +2,7 @@ use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("DFCoder TUI - Coming in Phase 1!");
+    println!("DFCoder TUI - Implementation in progress!");
     Ok(())
 }
 

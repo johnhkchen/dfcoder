@@ -1,7 +1,7 @@
-//! Test framework scenarios using the TestSystem
+//! Test Framework Scenarios
 //! 
 //! These tests demonstrate the TestSystem API and verify that agents
-//! behave correctly in various scenarios as specified in Commit #3.
+//! behave correctly in various coordination and supervision scenarios.
 
 use dfcoder_test_utils::TestSystem;
 use dfcoder_core::*;
