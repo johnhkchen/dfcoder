@@ -1,0 +1,73 @@
+[workspace]
+members = [
+    "crates/dfcoder-core",
+    "crates/dfcoder-types", 
+    "crates/dfcoder-tui",
+    "crates/dfcoder-daemon",
+    "crates/dfcoder-zellij-plugin",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["DFCoder Team"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/dfcoder"
+description = "Dwarf Fortress style AI agent manager for Claude Code"
+
+[workspace.dependencies]
+# Core dependencies
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# TUI dependencies  
+ratatui = "0.28"
+crossterm = "0.28"
+tui-input = "0.10"
+
+# Async and concurrency
+async-trait = "0.1"
+futures = "0.3"
+dashmap = "6.0"
+
+# Time and intervals
+chrono = { version = "0.4", features = ["serde"] }
+instant = "0.1"
+
+# Configuration
+config = "0.14"
+toml = "0.8"
+
+# Zellij plugin (WASM)
+zellij-tile = "0.38"
+serde_wasm_bindgen = "0.6"
+
+# Internal workspace dependencies
+dfcoder-core = { path = "crates/dfcoder-core" }
+dfcoder-types = { path = "crates/dfcoder-types" }
+
+[package]
+name = "dfcoder"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[[bin]]
+name = "dfcoder"
+path = "src/main.rs"
+
+[dependencies]
+dfcoder-tui = { path = "crates/dfcoder-tui" }
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

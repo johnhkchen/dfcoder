@@ -1,0 +1,23 @@
+[package]
+name = "dfcoder-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core library for DFCoder agent management"
+
+[dependencies]
+dfcoder-types.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+dashmap.workspace = true
+chrono.workspace = true
+config.workspace = true
+toml.workspace = true

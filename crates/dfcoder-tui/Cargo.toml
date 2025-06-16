@@ -1,0 +1,23 @@
+[package]
+name = "dfcoder-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Terminal user interface for DFCoder"
+
+[[bin]]
+name = "dfcoder-tui"
+path = "src/main.rs"
+
+[dependencies]
+dfcoder-core.workspace = true
+dfcoder-types.workspace = true
+tokio.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+tui-input.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+tracing.workspace = true

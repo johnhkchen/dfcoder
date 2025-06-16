@@ -1,0 +1,13 @@
+[package]
+name = "dfcoder-types"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core types for DFCoder"
+
+[dependencies]
+serde.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
