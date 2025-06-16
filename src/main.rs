@@ -3,7 +3,7 @@ use tracing_subscriber;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::init();
+    tracing_subscriber::fmt::init();
     
     tracing::info!("Starting DFCoder...");
     

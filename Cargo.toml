@@ -46,7 +46,7 @@ toml = "0.8"
 
 # Zellij plugin (WASM)
 zellij-tile = "0.38"
-serde_wasm_bindgen = "0.6"
+serde-wasm-bindgen = "0.6"
 
 # Internal workspace dependencies
 dfcoder-core = { path = "crates/dfcoder-core" }

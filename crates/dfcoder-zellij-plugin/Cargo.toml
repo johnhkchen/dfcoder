@@ -15,4 +15,4 @@ dfcoder-types.workspace = true
 zellij-tile.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_wasm_bindgen.workspace = true
+serde-wasm-bindgen.workspace = true
